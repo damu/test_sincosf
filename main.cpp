@@ -71,44 +71,133 @@ public:
 
 // /////////////////////////////
 
-struct sine_cache
+inline float fmodf_fast(float value,float divider)
+{
+    float ret;
+    ret=value/divider;
+    ret=ret-(long)ret;
+    ret*=divider;
+    return ret;
+}
+
+struct cosine_cache
 {
     float values[91];
 
-    sine_cache()
+    cosine_cache()
     {
         for(int i=0;i<=90;i++)
-            values[i]=sinf(i*3.14159265f/180.0f);
+            values[i]=cosf(i*3.14159265f/180.0f);
     }
 };
 
-void SinCosf_cached(float degree, float* sin, float* cos)
+struct cosine_cache_360
 {
-    static sine_cache cache;
+    float values[361];
+
+    cosine_cache_360()
+    {
+        for(int i=0;i<=360;i++)
+            values[i]=cosf(i*3.14159265f/180.0f);
+    }
+};
+
+void SinCosf_cached_360(float degree, float* sin, float* cos)
+{
+    static cosine_cache_360 cache;
     if (degree < -360.0f)    // wrap input angle to -360...360
-        degree = fmodf(degree,360.0f);
+        degree = fmodf_fast(degree,360.0f);
     else if (degree >  360.0f)
-        degree = fmodf(degree,360.0f);
+        degree = fmodf_fast(degree,360.0f);
 
-    // wrap input angle to 0...90
-    if (degree < 0.0f)
-        degree += 180.0f;
-    if (degree > 90.0f)
-        degree = 90.0f-degree;
+    float mod;
+    float lower;
+    float delta;
+    int index;
 
-    int i=degree;
-    float mod=degree-i;
-    float lower=cache.values[i];
-    float d=cache.values[i+1]-lower;
-    *sin=lower+d*mod;
+    {   // sine
+        float degree_sine=degree-90;
+        if (degree_sine < 0.0f)      // translate for sine
+            degree_sine += 360.0f;
+
+        index=degree_sine;
+        mod=degree_sine-index;
+        lower=cache.values[index];
+        delta=cache.values[index+1]-lower;
+        *sin=lower+delta*mod;
+    }
+    {   // cosine
+        if (degree < 0.0f)      // flip for cosine
+            degree = -degree;
+
+        index=degree;
+        lower=cache.values[index];
+        delta=cache.values[index+1]-lower;
+        *cos=lower+delta*mod;
+    }
+}
+
+// this is slow and currently nor working properly
+void SinCosf_cached_90(float degree, float* sin, float* cos)
+{
+    static cosine_cache cache;
+    if (degree < -360.0f)    // wrap input angle to -360...360
+        degree = fmodf_fast(degree,360.0f);
+    else if (degree >  360.0f)
+        degree = fmodf_fast(degree,360.0f);
+
+    float mod;
+    float lower;
+    float delta;
+    int index;
+
+    {   // sine
+        float degree_sine=degree;
+        if (degree_sine < 0.0f)      // translate for sine
+            degree_sine += 180.0f;
+        if (degree_sine > 90.0f)
+        {
+            degree_sine = 90.0f-degree;
+            index=degree_sine;
+            mod=degree_sine-index;
+            lower=cache.values[90-index];
+            delta=cache.values[89-index]-lower;
+            *sin=lower+delta*mod;
+        }
+        else
+        {
+            index=degree_sine;
+            mod=degree_sine-index;
+            lower=cache.values[90-index];
+            delta=cache.values[89-index]-lower;
+            *sin=lower+delta*mod;
+        }
+    }
+    {   // cosine
+        if (degree < 0.0f)      // flip for cosine
+            degree = -degree;
+        if (degree > 90.0f)
+        {
+            degree = 90.0f-degree;
+            lower=cache.values[index];
+            delta=cache.values[index+1]-lower;
+            *cos=-(lower+delta*mod);
+        }
+        else
+        {
+            lower=cache.values[index];
+            delta=cache.values[index+1]-lower;
+            *cos=lower+delta*mod;
+        }
+    }
 }
 
 void sincosf_fast3(float x, float* sin, float* cos)
 {
     if (x < -6.28318531f)    // wrap input angle to -360..360
-        x = fmodf(x,6.28318531f);
+        x = fmodf_fast(x,6.28318531f);
     else if (x > 6.28318531f)
-        x = fmodf(x,6.28318531f);
+        x = fmodf_fast(x,6.28318531f);
 
     if (x < -3.14159265f)    // wrap input angle to -180..180
         x += 6.28318531f;
@@ -135,9 +224,9 @@ void sincosf_fast3(float x, float* sin, float* cos)
 void sincosf_fast2(float x, float* sin, float* cos)
 {
     if (x < -6.28318531f)    // wrap input angle to -360..360
-        x = fmodf(x,6.28318531f);
+        x = fmodf_fast(x,6.28318531f);
     else if (x > 6.28318531f)
-        x = fmodf(x,6.28318531f);
+        x = fmodf_fast(x,6.28318531f);
 
     if (x < -3.14159265f)    // wrap input angle to -180..180
         x += 6.28318531f;
@@ -189,7 +278,7 @@ void sincosf_fast2(float x, float* sin, float* cos)
 
 void SinCosfFast(float x, float* sin, float* cos)
 {
-    x=fmodf(x,360);
+    x=fmodf_fast(x,360);
 
     // always wrap input angle to -180..180
     if (x < -180.0f)
@@ -218,7 +307,7 @@ void SinCosfFast(float x, float* sin, float* cos)
 // based on the Low precision sine/cosine from http://lab.polygonal.de/?p=205. In my test it itself is ~4.5 times faster as the normal sinf.
 void sincosf_fast(float x, float* sin, float* cos)
 {
-    x=fmodf(x,3.14159265*2);
+    x=fmodf_fast(x,3.14159265*2);
 
     // always wrap input angle to -180..180
     if (x < -3.14159265f)
@@ -246,16 +335,7 @@ void sincosf_fast(float x, float* sin, float* cos)
 
 using namespace std;
 
-inline float fmodf_fast(float value,float divider)
-{
-    float ret;
-    ret=value/divider;
-    ret=ret-(long)ret;
-    ret*=divider;
-    return ret;
-}
-
-int main()
+void benchmark_fmodf()
 {
     float f2;
     float f3=0;
@@ -295,18 +375,22 @@ int main()
             f3+=fmodf_fast(f,360.0f);
     }
     cout<<f3<<endl;
-    return 0;
+}
 
+int main()
+{
     float sin;
     float cos;
-    for(float i=-720;i<=720;i+=90.0f/15)
+    for(float i=-720;i<=720;i+=90.0f/4)
     {
         sincosf_fast2(i*3.14159265/180,&sin,&cos);
         std::cout<<"degree: "<<i<<" SinCosfFast2: \t"<<sin<<" \t"<<cos;
         sincosf_fast3(i*3.14159265/180,&sin,&cos);
         std::cout<<" \tSinCosfFast3 "<<sin<<" "<<cos;
-        SinCosf_cached(i,&sin,&cos);
-        std::cout<<" \tSinCosf_cached "<<sin<<" "<<cos;
+        SinCosf_cached_90(i,&sin,&cos);
+        std::cout<<" \tSinCosf_cached_90 "<<sin<<" "<<cos;
+        SinCosf_cached_360(i,&sin,&cos);
+        std::cout<<" \tSinCosf_cached_360 "<<sin<<" "<<cos;
         //SinCosfFast(i,&sin,&cos);
         //std::cout<<" F "<<" "<<sin<<" "<<cos;
         //sincosf_fast(i*3.14159265/180,&sin,&cos);
@@ -343,19 +427,24 @@ int main()
             SinCosfFast(i,&s,&c);
     }
     {
-        timer _("sincosf_fast2 (better branching)");
+        timer _("sincosf_fast2 (precise and better branching)");
         for(float i=-720.0f;i<=i_end;i+=0.0001f)
             sincosf_fast2(i*3.14159265/180,&s,&c);
     }
     {
-        timer _("sincosf_fast3 (precise and better branching)");
+        timer _("sincosf_fast3 (precise and using fabsf instead of branches)");
         for(float i=-720.0f;i<=i_end;i+=0.0001f)
             sincosf_fast3(i*3.14159265/180,&s,&c);
     }
     {
-        timer _("SinCosf_cached");
+        timer _("SinCosf_cached_90");
         for(float i=-720.0f;i<=i_end;i+=0.0001f)
-            SinCosf_cached(i,&s,&c);
+            SinCosf_cached_90(i,&s,&c);
+    }
+    {
+        timer _("SinCosf_cached_360");
+        for(float i=-720.0f;i<=i_end;i+=0.0001f)
+            SinCosf_cached_360(i,&s,&c);
     }
     std::cout<<s<<" "<<c<<std::endl;
 }
